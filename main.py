@@ -33,7 +33,7 @@ class YouTubeDownloader(ctk.CTk):
         super().__init__()
         
         # 窗口基本配置
-        self.title("4K 视频下载神器 (专业版)")
+        self.title("Universal Video Downloader (YouTube & Bilibili)")
         self.geometry("700x600")
         
         # 状态控制变量
@@ -60,7 +60,7 @@ class YouTubeDownloader(ctk.CTk):
         # 标题
         title_label = ctk.CTkLabel(
             main_frame,
-            text="🎬 4K 视频下载神器",
+            text="🎬 Universal Video Downloader",
             font=ctk.CTkFont(size=26, weight="bold")
         )
         title_label.pack(pady=(0, 20))
@@ -103,45 +103,43 @@ class YouTubeDownloader(ctk.CTk):
         self.subtitle_menu.set('不下载 (None)')
         self.subtitle_menu.pack(fill="x", pady=(0, 20))
         
-        # 按钮区域
-        btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        btn_frame.pack(fill="x", pady=(0, 20))
-        
-        # 解析/下载按钮
+        # --- 底部按钮区域 (Footer) ---
+        # 关键修改：先 Pack 底部容器，确保它固定在底部
+        self.footer_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        self.footer_frame.pack(side="bottom", fill="x", pady=(10, 0))
+
+        # 解析/下载按钮 (默认显示)
         self.parse_btn = ctk.CTkButton(
-            btn_frame,
+            self.footer_frame,
             text="解析并下载",
             command=self.on_parse_click,
             height=50,
             font=ctk.CTkFont(size=16, weight="bold"),
             corner_radius=10
         )
-        self.parse_btn.pack(fill="x", side="top") # 初始占满
+        self.parse_btn.pack(fill="x")
 
-        # 暂停/继续 按钮容器 (初始隐藏)
-        self.control_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        # self.control_frame.pack(...) # 需要时再显示
-
+        # 暂停/继续 按钮 (默认隐藏)
         self.pause_btn = ctk.CTkButton(
-            self.control_frame,
+            self.footer_frame,
             text="⏸️ 暂停下载",
             command=self.pause_download,
             fg_color="#D35400", hover_color="#A04000",
-            width=150, height=40
+            height=40
         )
-        self.pause_btn.pack(side="left", padx=10, fill="x", expand=True)
+        # self.pause_btn.pack(...) managed by set_ui_state
 
         self.resume_btn = ctk.CTkButton(
-            self.control_frame,
+            self.footer_frame,
             text="▶️ 继续下载",
             command=self.resume_download,
             fg_color="#27AE60", hover_color="#1E8449",
-            state="disabled", # 初始不可用
-            width=150, height=40
+            state="disabled",
+            height=40
         )
-        self.resume_btn.pack(side="right", padx=10, fill="x", expand=True)
+        # self.resume_btn.pack(...) managed by set_ui_state
 
-        # 日志区域
+        # --- 日志区域 (填充剩余空间) ---
         log_label = ctk.CTkLabel(main_frame, text="实时日志/进度：", font=ctk.CTkFont(size=14))
         log_label.pack(anchor="w", pady=(5, 5))
         
@@ -296,8 +294,10 @@ class YouTubeDownloader(ctk.CTk):
         # 恢复状态
         if not processing and not downloading:
             self.parse_btn.configure(state="normal", text="解析并下载")
-            self.parse_btn.pack(fill="x", side="top")
-            self.control_frame.pack_forget() # 隐藏控制按钮
+            # 恢复大按钮显示
+            self.pause_btn.pack_forget()
+            self.resume_btn.pack_forget()
+            self.parse_btn.pack(fill="x")
             self.url_entry.configure(state="normal")
             self.quality_combo.configure(state="normal")
             self.subtitle_menu.configure(state="normal")
@@ -305,9 +305,15 @@ class YouTubeDownloader(ctk.CTk):
             return
 
         # 正在处理/下载
+        # 正在处理/下载
         self.is_downloading = True
-        self.parse_btn.pack_forget() # 隐藏大按钮，显示控制按钮
-        self.control_frame.pack(fill="x", pady=(0, 20))
+        
+        # 隐藏大按钮
+        self.parse_btn.pack_forget() 
+        
+        # 显示控制按钮 (在 Footer 中并排显示)
+        self.pause_btn.pack(side="left", padx=5, fill="x", expand=True)
+        self.resume_btn.pack(side="right", padx=5, fill="x", expand=True)
         
         self.url_entry.configure(state="disabled")
         self.quality_combo.configure(state="disabled")
