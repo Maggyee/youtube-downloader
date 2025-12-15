@@ -8,8 +8,8 @@ YouTube 4K 视频下载器 (升级版)
 
 import os
 # 👇👇👇 必须保留的代理配置 👇👇👇
-os.environ["http_proxy"] = "http://127.0.0.1:7890"
-os.environ["https_proxy"] = "http://127.0.0.1:7890"
+#os.environ["http_proxy"] = "http://127.0.0.1:7890"
+#os.environ["https_proxy"] = "http://127.0.0.1:7890"
 
 import customtkinter as ctk
 import yt_dlp
