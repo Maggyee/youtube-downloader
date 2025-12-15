@@ -2,3 +2,9 @@
 *.mp4
 
 ffmpeg.exe
+dist/
+
+build/
+
+*.spec
+*.vtt
