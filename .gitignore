@@ -1,0 +1,4 @@
+﻿__pycache__/
+*.mp4
+
+ffmpeg.exe
