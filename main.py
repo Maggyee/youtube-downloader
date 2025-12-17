@@ -7,9 +7,10 @@ YouTube 4K 视频下载器 (升级版)
 """
 
 import os
+import sys # Added for Frozen Path Fix
 # 👇👇👇 必须保留的代理配置 👇👇👇
-os.environ["http_proxy"] = "http://127.0.0.1:7890"
-os.environ["https_proxy"] = "http://127.0.0.1:7890"
+#os.environ["http_proxy"] = "http://127.0.0.1:7890"
+#os.environ["https_proxy"] = "http://127.0.0.1:7890"
 
 import customtkinter as ctk
 import yt_dlp
@@ -25,6 +26,15 @@ ctk.set_default_color_theme("blue")  # 蓝色主题
 class PauseException(Exception):
     """用于暂停下载的自定义异常"""
     pass
+
+def get_app_path():
+    """Returns the actual path of the executable (if frozen) or the script."""
+    if getattr(sys, 'frozen', False):
+        # If running as compiled .exe
+        return os.path.dirname(sys.executable)
+    else:
+        # If running as standard .py script
+        return os.path.dirname(os.path.abspath(__file__))
 
 class YouTubeDownloader(ctk.CTk):
     """YouTube 下载器主窗口类"""
@@ -102,6 +112,14 @@ class YouTubeDownloader(ctk.CTk):
         )
         self.subtitle_menu.set('不下载 (None)')
         self.subtitle_menu.pack(fill="x", pady=(0, 20))
+
+        # 网络设置 (IPv6)
+        self.ipv6_switch = ctk.CTkSwitch(
+            main_frame,
+            text="IPv6 优先 (IPv6 Only)",
+            font=ctk.CTkFont(size=13)
+        )
+        self.ipv6_switch.pack(anchor="w", pady=(0, 20))
         
         # --- 底部按钮区域 (Footer) ---
         # 关键修改：先 Pack 底部容器，确保它固定在底部
@@ -138,6 +156,16 @@ class YouTubeDownloader(ctk.CTk):
             height=40
         )
         # self.resume_btn.pack(...) managed by set_ui_state
+
+        # 打开文件夹按钮
+        self.open_dir_btn = ctk.CTkButton(
+            self.footer_frame,
+            text="📂 打开下载位置 (Open Folder)",
+            command=lambda: os.startfile(get_app_path()),
+            height=35,
+            fg_color="#5D6D7E", hover_color="#34495E"
+        )
+        self.open_dir_btn.pack(fill="x", pady=(5, 0))
 
         # --- 日志区域 (填充剩余空间) ---
         log_label = ctk.CTkLabel(main_frame, text="实时日志/进度：", font=ctk.CTkFont(size=14))
@@ -301,6 +329,7 @@ class YouTubeDownloader(ctk.CTk):
             self.url_entry.configure(state="normal")
             self.quality_combo.configure(state="normal")
             self.subtitle_menu.configure(state="normal")
+            self.ipv6_switch.configure(state="normal")
             self.is_downloading = False
             return
 
@@ -318,6 +347,7 @@ class YouTubeDownloader(ctk.CTk):
         self.url_entry.configure(state="disabled")
         self.quality_combo.configure(state="disabled")
         self.subtitle_menu.configure(state="disabled")
+        self.ipv6_switch.configure(state="disabled")
         
         if paused:
             self.pause_btn.configure(state="disabled", fg_color="gray")
@@ -368,30 +398,45 @@ class YouTubeDownloader(ctk.CTk):
             else:
                 format_str = "bestaudio/best"
                 
-            current_dir = os.path.dirname(os.path.abspath(__file__))
+
+                
+            # current_dir = os.path.dirname(os.path.abspath(__file__)) # Obsolete
+            save_path = get_app_path()
             
             # ffmpeg 检查
             ffmpeg_location = None
+            current_dir = get_app_path() # Reuse get_app_path for ffmpeg check
             if os.path.exists(os.path.join(current_dir, "ffmpeg.exe")):
                 ffmpeg_location = current_dir
             
             ydl_opts = {
                 'format': format_str,
                 'merge_output_format': 'mp4',
-                'outtmpl': os.path.join(current_dir, '%(title)s.%(ext)s'),
+                'paths': {'home': save_path}, # Correct path for EXE
+                'outtmpl': '%(title)s.%(ext)s', 
                 'progress_hooks': [self.progress_hook], # 绑定钩子
                 'no_warnings': True,
                 
                 # === NETWORK STABILITY FIXES (CRITICAL) ===
                 'proxy': os.environ.get("http_proxy"),
-                'force_ipv4': True,                # Fixes 10054 error on many proxies
-                'socket_timeout': 30,              # Increases tolerance for lag
-                'retries': 20,                     # Retry more times before giving up
-                'fragment_retries': 20,            # Retry specific chunks if they fail
+                'retries': float('inf'),           # Infinite retries for HTTP errors
+                'fragment_retries': float('inf'),  # Infinite retries for segment errors
+                'skip_unavailable_fragments': False, # Never skip parts (keep trying)
+                'socket_timeout': 30,              # Wait 30s before considering connection dead
+                'force_ipv4': True,                # Default fix for 10054 (will be overridden if ipv6 checked)
                 'ignoreerrors': True,              # Don't crash the whole app on one error
                 'continuedl': True,                # Keep resume support
                 # ==========================================
             }
+
+            # IPv6 逻辑覆盖
+            if self.ipv6_switch.get():
+                ydl_opts['force_ipv4'] = False
+                ydl_opts['force_ipv6'] = True
+            else:
+                ydl_opts['force_ipv4'] = True
+                ydl_opts['force_ipv6'] = False
+            
             
             if ffmpeg_location:
                 ydl_opts['ffmpeg_location'] = ffmpeg_location
@@ -413,12 +458,39 @@ class YouTubeDownloader(ctk.CTk):
 
             self.log_message(f"🚀 开始下载 {len(self.current_download_urls)} 个任务...")
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # 传入 URL 列表，yt_dlp 会自动处理
-                ydl.download(self.current_download_urls)
+            # === AUTO-RETRY LOGIC ===
+            max_retries = 50  # Try up to 50 times (essentially infinite for user context)
+            attempt = 0
+            success = False
             
-            # 如果正常跑完(没有抛出异常)，说明全部完成
-            self.log_message("🎉 所有任务已全部完成！")
+            while attempt < max_retries:
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download(self.current_download_urls)
+                        success = True
+                        break # If we get here, download finished successfully!
+                
+                except PauseException:
+                    raise # Rethrow pause exception to be caught by outer block
+                    
+                except Exception as e:
+                    attempt += 1
+                    error_msg = str(e)
+                    
+                    # Update Log UI
+                    self.log_message(f"⚠️ 网络不稳定，第 {attempt} 次重试中... (5秒后继续)")
+                    print(f"Retry {attempt}/{max_retries}: {error_msg}")
+                    
+                    # Wait before retrying to let network recover
+                    time.sleep(5)
+                    
+            if success:
+                self.log_message("🎉 所有任务已全部完成！")
+            else:
+                self.log_message("❌ 重试次数过多，下载失败。请检查网络。")
+            # ========================
+            
+
             self.after(0, lambda: messagebox.showinfo("成功", "所有下载任务已完成！"))
             self.after(0, lambda: self.set_ui_state(downloading=False)) # 恢复初始状态
 
